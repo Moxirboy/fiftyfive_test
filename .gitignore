@@ -1,0 +1,27 @@
+# Binaries and build output
+bin/
+*.out
+*.test
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Coverage and profiling
+coverage.*
+*.prof
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Temporary files
+tmp/
+*.tmp
+
+# Sandbox-local Go caches
+.gocache/
+.gomodcache/
+.gopath/

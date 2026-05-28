@@ -1,0 +1,14 @@
+.git
+.gocache
+.gomodcache
+.gopath
+bin
+coverage.*
+*.out
+*.prof
+*.test
+tmp
+.env
+.env.*
+!.env.example
+.DS_Store

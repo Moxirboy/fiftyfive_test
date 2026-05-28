@@ -1,0 +1,257 @@
+basePath: /
+definitions:
+  dto.BookingEnvelope:
+    properties:
+      booking:
+        $ref: '#/definitions/dto.BookingResponse'
+      success:
+        example: true
+        type: boolean
+    type: object
+  dto.BookingRequest:
+    properties:
+      offer_id:
+        example: OF-123456
+        type: string
+      passengers:
+        items:
+          $ref: '#/definitions/dto.PassengerDTO'
+        type: array
+    type: object
+  dto.BookingResponse:
+    properties:
+      booking_id:
+        example: BK-987654
+        type: string
+      expires_at:
+        example: "2026-05-28T15:30:00Z"
+        type: string
+      offer_id:
+        example: OF-123456
+        type: string
+      status:
+        example: created
+        type: string
+    type: object
+  dto.ErrorBody:
+    properties:
+      code:
+        example: VALIDATION_ERROR
+        type: string
+      message:
+        example: from is required
+        type: string
+    type: object
+  dto.ErrorEnvelope:
+    properties:
+      error:
+        $ref: '#/definitions/dto.ErrorBody'
+      success:
+        example: false
+        type: boolean
+    type: object
+  dto.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  dto.OfferResponse:
+    properties:
+      airline:
+        example: TK
+        type: string
+      base_price:
+        example: 500
+        type: number
+      commission:
+        example: 25
+        type: number
+      currency:
+        example: USD
+        type: string
+      departure_date:
+        example: "2026-06-15"
+        type: string
+      flight_number:
+        example: TK255
+        type: string
+      from:
+        example: DYU
+        type: string
+      offer_id:
+        example: OF-123456
+        type: string
+      profit:
+        example: 50
+        type: number
+      provider:
+        example: MockAvia
+        type: string
+      return_date:
+        example: "2026-06-25"
+        type: string
+      service_fee:
+        example: 25
+        type: number
+      to:
+        example: IST
+        type: string
+      total_price:
+        example: 550
+        type: number
+    type: object
+  dto.PassengerDTO:
+    properties:
+      document_number:
+        example: A1234567
+        type: string
+      first_name:
+        example: Alisher
+        type: string
+      last_name:
+        example: Sabirov
+        type: string
+      type:
+        example: adult
+        type: string
+    type: object
+  dto.SearchEnvelope:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/dto.OfferResponse'
+        type: array
+      success:
+        example: true
+        type: boolean
+    type: object
+  dto.SearchRequest:
+    properties:
+      adults:
+        example: 1
+        type: integer
+      children:
+        example: 1
+        type: integer
+      currency:
+        example: USD
+        type: string
+      departure_date:
+        example: "2026-06-15"
+        type: string
+      from:
+        example: DYU
+        type: string
+      infants:
+        example: 0
+        type: integer
+      return_date:
+        example: "2026-06-25"
+        type: string
+      to:
+        example: IST
+        type: string
+    type: object
+info:
+  contact: {}
+  description: Flight search and preliminary booking API with unified success and
+    error envelopes.
+  title: FlySoft Flight Integration Service API
+  version: "1.0"
+paths:
+  /api/v1/bookings:
+    post:
+      consumes:
+      - application/json
+      description: Creates a preliminary booking for an existing, unexpired offer.
+      parameters:
+      - description: Booking request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BookingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BookingEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+      summary: Create a preliminary booking
+      tags:
+      - bookings
+  /api/v1/flights/search:
+    post:
+      consumes:
+      - application/json
+      description: Searches the mock flight provider, prices matching offers, persists
+        them, and returns normalized offers.
+      parameters:
+      - description: Flight search request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.SearchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SearchEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+      summary: Search flight offers
+      tags:
+      - flights
+  /health:
+    get:
+      description: Returns service liveness status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.HealthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.ErrorEnvelope'
+      summary: Health check
+      tags:
+      - health
+swagger: "2.0"
