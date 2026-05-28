@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,8 +12,10 @@ import (
 	"flysoft-flight-service/internal/dto"
 )
 
+const idempotencyKeyHeader = "Idempotency-Key"
+
 type BookingCreator interface {
-	Create(ctx context.Context, req dto.BookingRequest) (dto.BookingResponse, error)
+	Create(ctx context.Context, req dto.BookingRequest, idempotencyKey string) (dto.BookingResponse, error)
 }
 
 type BookingHandler struct {
@@ -30,10 +33,11 @@ func NewBookingHandler(service BookingCreator, logger *slog.Logger) *BookingHand
 // Create godoc
 //
 // @Summary Create a preliminary booking
-// @Description Creates a preliminary booking for an existing, unexpired offer.
+// @Description Creates a preliminary booking for an existing, unexpired offer. Pass an Idempotency-Key header to make retries safe.
 // @Tags bookings
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string false "Idempotency key; repeating it returns the original booking"
 // @Param request body dto.BookingRequest true "Booking request"
 // @Success 200 {object} dto.BookingEnvelope
 // @Failure 400 {object} dto.ErrorEnvelope
@@ -48,7 +52,8 @@ func (h *BookingHandler) Create(c *gin.Context) {
 		return
 	}
 
-	booking, err := h.service.Create(c.Request.Context(), req)
+	idempotencyKey := strings.TrimSpace(c.GetHeader(idempotencyKeyHeader))
+	booking, err := h.service.Create(c.Request.Context(), req, idempotencyKey)
 	if err != nil {
 		writeError(c, h.logger, err)
 		return

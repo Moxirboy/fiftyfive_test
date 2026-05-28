@@ -2,7 +2,7 @@
 
 ## 1. Adding A Second Provider
 
-Create a new package under `internal/providers` that implements `FlightProvider`. The adapter owns supplier-specific request/response mapping and returns normalized `ProviderOffer` values. Wire it through a provider registry or slice, let the flight service fan out searches in parallel, then merge the results before pricing and persistence. Handlers, pricing, repositories, and booking logic do not need provider-specific changes.
+Create a new package under `internal/providers` that implements `FlightProvider`. The adapter owns supplier-specific request/response mapping and returns normalized `ProviderOffer` values. Wire it through a provider registry or slice, let the flight service fan out searches in parallel, then merge the results before pricing and persistence. Handlers, pricing, repositories, and booking logic do not need provider-specific changes. Each provider is already wrapped by the retry/timeout decorator (`providers.NewRetry`), so a new adapter inherits per-attempt timeouts and retries with no extra code.
 
 ## 2. Caching Search Results
 
@@ -10,7 +10,7 @@ Use a normalized key such as `from|to|departure_date|return_date|adults|children
 
 ## 3. Preventing Duplicate Bookings
 
-Accept an `Idempotency-Key` header on booking creation, persist it with the booking request hash and response, and enforce a unique database constraint on the key. Retrying the same key returns the same booking result. Add a database constraint or transactional app check for `offer_id` if one offer should only produce one active booking.
+This is implemented. `POST /api/v1/bookings` accepts an `Idempotency-Key` header; the first request stores the key together with a SHA-256 hash of the request body, and a partial unique index (`idx_bookings_idempotency_key`) guarantees one booking per key even under concurrent retries (a lost race re-reads and replays the winner). Repeating the same key with the same body returns the original booking; reusing a key with a different body returns `409 IDEMPOTENCY_CONFLICT`. To further guarantee one active booking per offer, add a unique constraint or transactional check on `offer_id`.
 
 ## 4. Logs And Monitoring
 

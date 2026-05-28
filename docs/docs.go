@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/api/v1/bookings": {
             "post": {
-                "description": "Creates a preliminary booking for an existing, unexpired offer.",
+                "description": "Creates a preliminary booking for an existing, unexpired offer. Pass an Idempotency-Key header to make retries safe.",
                 "consumes": [
                     "application/json"
                 ],
@@ -29,6 +29,12 @@ const docTemplate = `{
                 ],
                 "summary": "Create a preliminary booking",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Idempotency key; repeating it returns the original booking",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
                     {
                         "description": "Booking request",
                         "name": "request",

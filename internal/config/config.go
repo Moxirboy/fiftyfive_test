@@ -24,6 +24,10 @@ const (
 	defaultServiceFeeAdult   = int64(1500)
 	defaultServiceFeeChild   = int64(1000)
 	defaultServiceFeeInfant  = int64(0)
+
+	defaultProviderTimeout      = 3 * time.Second
+	defaultProviderMaxRetries   = 2
+	defaultProviderRetryBackoff = 200 * time.Millisecond
 )
 
 type Config struct {
@@ -33,6 +37,13 @@ type Config struct {
 	OfferTTL          time.Duration
 	CommissionPercent int64
 	ServiceFees       ServiceFeeConfig
+	Provider          ProviderConfig
+}
+
+type ProviderConfig struct {
+	Timeout      time.Duration
+	MaxRetries   int
+	RetryBackoff time.Duration
 }
 
 type DBConfig struct {
@@ -106,6 +117,21 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	providerTimeout, err := envDuration("PROVIDER_TIMEOUT", defaultProviderTimeout)
+	if err != nil {
+		return Config{}, err
+	}
+
+	providerMaxRetries, err := envInt("PROVIDER_MAX_RETRIES", defaultProviderMaxRetries)
+	if err != nil {
+		return Config{}, err
+	}
+
+	providerRetryBackoff, err := envDuration("PROVIDER_RETRY_BACKOFF", defaultProviderRetryBackoff)
+	if err != nil {
+		return Config{}, err
+	}
+
 	cfg := Config{
 		HTTPPort: httpPort,
 		DB: DBConfig{
@@ -123,6 +149,11 @@ func Load() (Config, error) {
 			Adult:  serviceFeeAdult,
 			Child:  serviceFeeChild,
 			Infant: serviceFeeInfant,
+		},
+		Provider: ProviderConfig{
+			Timeout:      providerTimeout,
+			MaxRetries:   providerMaxRetries,
+			RetryBackoff: providerRetryBackoff,
 		},
 	}
 
@@ -173,6 +204,15 @@ func (c Config) Validate() error {
 	}
 	if c.ServiceFees.Adult < 0 || c.ServiceFees.Child < 0 || c.ServiceFees.Infant < 0 {
 		return fmt.Errorf("service fees must be non-negative")
+	}
+	if c.Provider.Timeout < 0 {
+		return fmt.Errorf("PROVIDER_TIMEOUT must be non-negative")
+	}
+	if c.Provider.MaxRetries < 0 {
+		return fmt.Errorf("PROVIDER_MAX_RETRIES must be non-negative")
+	}
+	if c.Provider.RetryBackoff < 0 {
+		return fmt.Errorf("PROVIDER_RETRY_BACKOFF must be non-negative")
 	}
 
 	return nil

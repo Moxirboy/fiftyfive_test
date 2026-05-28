@@ -21,6 +21,7 @@ import (
 	applogger "flysoft-flight-service/internal/logger"
 	"flysoft-flight-service/internal/money"
 	"flysoft-flight-service/internal/pricing"
+	"flysoft-flight-service/internal/providers"
 	"flysoft-flight-service/internal/providers/mockavia"
 	"flysoft-flight-service/internal/repository"
 	"flysoft-flight-service/internal/services"
@@ -64,7 +65,11 @@ func main() {
 
 	flightRepo := repository.NewFlightOfferRepository(db)
 	bookingRepo := repository.NewBookingRepository(db)
-	provider := mockavia.New()
+	provider := providers.NewRetry(mockavia.New(), providers.RetryConfig{
+		Timeout:    cfg.Provider.Timeout,
+		MaxRetries: cfg.Provider.MaxRetries,
+		Backoff:    cfg.Provider.RetryBackoff,
+	})
 	calculator := pricing.NewCalculator(pricing.Config{
 		CommissionPercent: cfg.CommissionPercent,
 		ServiceFees: pricing.ServiceFees{

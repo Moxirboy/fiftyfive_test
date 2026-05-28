@@ -270,7 +270,7 @@ func TestBookingServiceCreate(t *testing.T) {
 				discardLogger(),
 			)
 
-			got, err := service.Create(context.Background(), request)
+			got, err := service.Create(context.Background(), request, "")
 			if tt.wantCode != "" {
 				assertAppErrorCode(t, err, tt.wantCode)
 				if len(bookingRepo.created) != 0 {
@@ -284,6 +284,90 @@ func TestBookingServiceCreate(t *testing.T) {
 			tt.assert(t, bookingRepo, got)
 		})
 	}
+}
+
+func TestBookingServiceCreateIdempotency(t *testing.T) {
+	offer := &models.FlightOffer{OfferID: "OF-123456", ExpiresAt: fixedNow.Add(30 * time.Minute)}
+	request := dto.BookingRequest{
+		OfferID: "OF-123456",
+		Passengers: []dto.PassengerDTO{
+			{Type: "adult", FirstName: "Alisher", LastName: "Sabirov", DocumentNumber: "A1234567"},
+		},
+	}
+
+	newService := func() (*services.BookingService, *fakeBookingRepository) {
+		offerRepo := &fakeFlightOfferRepository{
+			byID: map[string]*models.FlightOffer{offer.OfferID: cloneFlightOffer(offer)},
+		}
+		bookingRepo := &fakeBookingRepository{}
+		service := services.NewBookingService(
+			offerRepo,
+			bookingRepo,
+			&sequenceIDGenerator{ids: []string{"BK-111111", "BK-222222"}},
+			fixedClock{now: fixedNow},
+			discardLogger(),
+		)
+		return service, bookingRepo
+	}
+
+	t.Run("same key replays the original booking", func(t *testing.T) {
+		service, bookingRepo := newService()
+
+		first, err := service.Create(context.Background(), request, "key-1")
+		if err != nil {
+			t.Fatalf("first Create() error = %v", err)
+		}
+		second, err := service.Create(context.Background(), request, "key-1")
+		if err != nil {
+			t.Fatalf("second Create() error = %v", err)
+		}
+
+		if first.BookingID != "BK-111111" {
+			t.Fatalf("first BookingID = %q, want BK-111111", first.BookingID)
+		}
+		if second.BookingID != first.BookingID {
+			t.Fatalf("second BookingID = %q, want %q (replayed)", second.BookingID, first.BookingID)
+		}
+		if len(bookingRepo.created) != 1 {
+			t.Fatalf("created bookings = %d, want 1 (idempotent retry)", len(bookingRepo.created))
+		}
+	})
+
+	t.Run("same key with different body conflicts", func(t *testing.T) {
+		service, bookingRepo := newService()
+
+		if _, err := service.Create(context.Background(), request, "key-1"); err != nil {
+			t.Fatalf("first Create() error = %v", err)
+		}
+
+		other := dto.BookingRequest{
+			OfferID: "OF-123456",
+			Passengers: []dto.PassengerDTO{
+				{Type: "adult", FirstName: "Bobur", LastName: "Karimov", DocumentNumber: "C9999999"},
+			},
+		}
+		_, err := service.Create(context.Background(), other, "key-1")
+		assertAppErrorCode(t, err, apperror.CodeIdempotencyConflict)
+
+		if len(bookingRepo.created) != 1 {
+			t.Fatalf("created bookings = %d, want 1", len(bookingRepo.created))
+		}
+	})
+
+	t.Run("no key creates independent bookings", func(t *testing.T) {
+		service, bookingRepo := newService()
+
+		if _, err := service.Create(context.Background(), request, ""); err != nil {
+			t.Fatalf("first Create() error = %v", err)
+		}
+		if _, err := service.Create(context.Background(), request, ""); err != nil {
+			t.Fatalf("second Create() error = %v", err)
+		}
+
+		if len(bookingRepo.created) != 2 {
+			t.Fatalf("created bookings = %d, want 2", len(bookingRepo.created))
+		}
+	})
 }
 
 type fixedClock struct {
@@ -370,6 +454,7 @@ func (r *fakeFlightOfferRepository) GetByOfferID(_ context.Context, offerID stri
 type fakeBookingRepository struct {
 	created    []*models.Booking
 	passengers [][]*models.BookingPassenger
+	byKey      map[string]*models.Booking
 	err        error
 	nextID     int64
 }
@@ -377,6 +462,14 @@ type fakeBookingRepository struct {
 func (r *fakeBookingRepository) CreateWithPassengers(_ context.Context, booking *models.Booking, passengers []*models.BookingPassenger) error {
 	if r.err != nil {
 		return r.err
+	}
+	if booking.IdempotencyKey != nil {
+		if r.byKey == nil {
+			r.byKey = make(map[string]*models.Booking)
+		}
+		if _, exists := r.byKey[*booking.IdempotencyKey]; exists {
+			return repository.ErrDuplicate
+		}
 	}
 	if r.nextID == 0 {
 		r.nextID = 1
@@ -395,7 +488,24 @@ func (r *fakeBookingRepository) CreateWithPassengers(_ context.Context, booking 
 
 	r.created = append(r.created, &storedBooking)
 	r.passengers = append(r.passengers, storedPassengers)
+	if booking.IdempotencyKey != nil {
+		keyed := storedBooking
+		r.byKey[*booking.IdempotencyKey] = &keyed
+	}
 	return nil
+}
+
+func (r *fakeBookingRepository) GetByIdempotencyKey(_ context.Context, key string) (*models.Booking, error) {
+	if r.byKey == nil {
+		return nil, repository.ErrNotFound
+	}
+	booking, ok := r.byKey[key]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+
+	clone := *booking
+	return &clone, nil
 }
 
 func cloneFlightOffer(offer *models.FlightOffer) *models.FlightOffer {

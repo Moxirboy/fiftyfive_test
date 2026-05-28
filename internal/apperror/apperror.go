@@ -12,6 +12,7 @@ const (
 	CodeOfferExpired        = "OFFER_EXPIRED"
 	CodeProviderUnavailable = "PROVIDER_UNAVAILABLE"
 	CodeProviderEmpty       = "PROVIDER_EMPTY"
+	CodeIdempotencyConflict = "IDEMPOTENCY_CONFLICT"
 	CodeInternalError       = "INTERNAL_ERROR"
 )
 
@@ -50,6 +51,10 @@ func ProviderUnavailable(message string) *AppError {
 
 func ProviderEmpty(message string) *AppError {
 	return newAppError(CodeProviderEmpty, http.StatusNotFound, message, "provider returned no offers")
+}
+
+func IdempotencyConflict(message string) *AppError {
+	return newAppError(CodeIdempotencyConflict, http.StatusConflict, message, "idempotency key conflict")
 }
 
 func InternalError(message string) *AppError {

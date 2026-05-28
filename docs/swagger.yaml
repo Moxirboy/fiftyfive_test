@@ -165,7 +165,12 @@ paths:
       consumes:
       - application/json
       description: Creates a preliminary booking for an existing, unexpired offer.
+        Pass an Idempotency-Key header to make retries safe.
       parameters:
+      - description: Idempotency key; repeating it returns the original booking
+        in: header
+        name: Idempotency-Key
+        type: string
       - description: Booking request
         in: body
         name: request

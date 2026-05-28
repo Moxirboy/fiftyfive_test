@@ -36,6 +36,11 @@ All API errors use one envelope:
 
 Success responses use `{"success":true,"data":...}` for search and `{"success":true,"booking":...}` for bookings.
 
+### Reliability
+
+- **Provider resilience.** Provider calls go through a retry decorator (`internal/providers/retry.go`) that applies a per-attempt timeout and retries transient failures with a fixed backoff, while honoring caller cancellation. Tunable via `PROVIDER_TIMEOUT`, `PROVIDER_MAX_RETRIES`, and `PROVIDER_RETRY_BACKOFF`. Pricing, persistence, and the concrete providers stay free of retry bookkeeping.
+- **Idempotent bookings.** Send an `Idempotency-Key` header on `POST /api/v1/bookings`. The first request stores the key plus a hash of the body; repeating the same key returns the original booking, and a partial unique index (`idx_bookings_idempotency_key`) keeps it correct under concurrent retries. Reusing a key with a different body returns `409 IDEMPOTENCY_CONFLICT`.
+
 ### Project Tree
 
 ```text
@@ -240,6 +245,26 @@ Example response:
 }
 ```
 
+Idempotent booking — repeating the same `Idempotency-Key` with the same body returns the original booking instead of creating a new one:
+
+```sh
+curl -s -X POST http://localhost:8080/api/v1/bookings \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 7c9e6679-7425-40de-944b-e07fc1f90ae7' \
+  -d "{
+    \"offer_id\": \"${OFFER_ID}\",
+    \"passengers\": [
+      {\"type\": \"adult\", \"first_name\": \"Alisher\", \"last_name\": \"Sabirov\", \"document_number\": \"A1234567\"}
+    ]
+  }"
+```
+
+Reusing that key with a different body returns `409`:
+
+```json
+{"success":false,"error":{"code":"IDEMPOTENCY_CONFLICT","message":"idempotency key already used for a different request"}}
+```
+
 ## Environment Variables
 
 These variables match `.env.example`.
@@ -259,13 +284,14 @@ These variables match `.env.example`.
 | `SERVICE_FEE_ADULT` | `1500` | Adult service fee in cents. |
 | `SERVICE_FEE_CHILD` | `1000` | Child service fee in cents. |
 | `SERVICE_FEE_INFANT` | `0` | Infant service fee in cents. |
+| `PROVIDER_TIMEOUT` | `3s` | Per-attempt timeout for a provider search. |
+| `PROVIDER_MAX_RETRIES` | `2` | Retries after the first attempt on provider failure. |
+| `PROVIDER_RETRY_BACKOFF` | `200ms` | Fixed delay between provider attempts. |
 
 `DATABASE_URL` is used only by the Makefile migration target and is not an application setting.
 
 ## What Could Be Improved With More Time
 
-- Provider timeout plus retry/backoff policy.
-- Idempotency key support for booking creation.
 - Short-lived search-result caching.
 - Prometheus metrics and OpenTelemetry tracing.
 - Authentication and rate limiting.
