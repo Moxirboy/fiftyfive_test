@@ -1,21 +1,21 @@
-# Post-task Answers
+# Ответы на вопросы после выполнения
 
-## 1. Adding A Second Provider
+## 1. Как бы вы добавили второго поставщика авиабилетов?
 
-Create a new package under `internal/providers` that implements `FlightProvider`. The adapter owns supplier-specific request/response mapping and returns normalized `ProviderOffer` values. Wire it through a provider registry or slice, let the flight service fan out searches in parallel, then merge the results before pricing and persistence. Handlers, pricing, repositories, and booking logic do not need provider-specific changes. Each provider is already wrapped by the retry/timeout decorator (`providers.NewRetry`), so a new adapter inherits per-attempt timeouts and retries with no extra code.
+Создать новый пакет в `internal/providers`, реализующий интерфейс `FlightProvider`. Адаптер инкапсулирует преобразование запроса/ответа конкретного поставщика и возвращает нормализованные значения `ProviderOffer`. Подключить его через реестр или слайс поставщиков, дать flight-сервису выполнять поиск по поставщикам параллельно и объединять результаты перед расчётом стоимости и сохранением. Handler-ы, расчёт стоимости, репозитории и логика бронирования при этом не требуют изменений, специфичных для поставщика. Каждый поставщик уже оборачивается декоратором повторов и таймаутов (`providers.NewRetry`), поэтому новый адаптер автоматически получает таймаут на попытку и повторные запросы без дополнительного кода.
 
-## 2. Caching Search Results
+## 2. Как бы вы реализовали кэширование поисковых результатов?
 
-Slot a cache in front of `FlightService.Search`, keyed on a normalized request such as `from|to|departure_date|return_date|adults|children|infants|currency`. Store results in Redis for a short TTL, for example 1-5 minutes, because fares are volatile. Cache normalized provider offers before final pricing so configured fees still apply at response time. Add singleflight or a per-key lock to prevent cache stampedes.
+Разместить кэш перед `FlightService.Search` с ключом на основе нормализованного запроса, например `from|to|departure_date|return_date|adults|children|infants|currency`. Хранить результаты в Redis с коротким TTL (например, 1–5 минут), так как тарифы быстро меняются. Кэшировать нормализованные предложения поставщика до финального расчёта стоимости, чтобы настроенные комиссия и сборы применялись на момент ответа. Добавить singleflight или блокировку по ключу, чтобы избежать лавины одновременных запросов к кэшу (cache stampede).
 
-## 3. Preventing Duplicate Bookings
+## 3. Как бы вы защитили сервис от повторного создания бронирования?
 
-This is implemented. `POST /api/v1/bookings` accepts an `Idempotency-Key` header; the first request stores the key together with a SHA-256 hash of the request body, and a partial unique index (`idx_bookings_idempotency_key`) guarantees one booking per key even under concurrent retries (a lost race re-reads and replays the winner). Repeating the same key with the same body returns the original booking; reusing a key with a different body returns `409 IDEMPOTENCY_CONFLICT`. To further guarantee one active booking per offer, add a unique constraint or transactional check on `offer_id`.
+Это реализовано. Endpoint `POST /api/v1/bookings` принимает заголовок `Idempotency-Key`; при первом запросе ключ сохраняется вместе с SHA-256-хэшем тела запроса, а частичный уникальный индекс (`idx_bookings_idempotency_key`) гарантирует одно бронирование на ключ даже при конкурентных повторах (проигравший гонку повторно читает и возвращает результат победителя). Повторный запрос с тем же ключом и тем же телом возвращает исходное бронирование; использование того же ключа с другим телом возвращает `409 IDEMPOTENCY_CONFLICT`. Чтобы дополнительно гарантировать одно активное бронирование на предложение, можно добавить уникальное ограничение или транзакционную проверку по `offer_id`.
 
-## 4. Logs And Monitoring
+## 4. Как бы вы организовали логи и мониторинг?
 
-Already in place: structured `slog` JSON logs on stdout with a `request_id` attached to every request (and echoed in the `X-Request-ID` response header) via `internal/logger` and the logging/request-id middleware. Build on that with Prometheus RED metrics (request rate, error count, duration) plus provider-latency and booking counters, and OpenTelemetry traces across the handler, service, provider, and database boundaries. Alert on elevated 5xx rate, provider failures, high latency, and failed booking creation.
+Уже реализовано: структурированные JSON-логи через `slog` в stdout с `request_id`, привязанным к каждому запросу (и возвращаемым в заголовке ответа `X-Request-ID`) — через `internal/logger` и middleware логирования/request-id. Поверх этого стоит добавить метрики Prometheus в стиле RED (частота запросов, число ошибок, длительность), а также счётчики задержки поставщика и бронирований, и трассировку OpenTelemetry на границах handler → сервис → поставщик → база данных. Настроить алерты на рост доли ответов 5xx, сбои поставщика, высокую задержку и неуспешные создания бронирований.
 
-## 5. Future Microservice Splits
+## 5. Какие части проекта можно было бы вынести в отдельные микросервисы в будущем?
 
-Split only when operational pressure justifies it. Natural boundaries are a Search/Provider Integration service for provider adapters and normalization, a Pricing service for money rules, a Booking service for offer and booking lifecycle, and an API gateway/BFF for external clients. Shared contracts should remain small and versioned so provider churn does not leak into booking or pricing.
+Разделять стоит только тогда, когда это оправдано операционной нагрузкой. Естественные границы: сервис поиска и интеграции с поставщиками (адаптеры поставщиков и нормализация), сервис расчёта стоимости (денежные правила), сервис бронирования (жизненный цикл предложений и бронирований) и API-шлюз/BFF для внешних клиентов. Общие контракты должны оставаться небольшими и версионируемыми, чтобы изменения у поставщиков не «протекали» в бронирование или расчёт стоимости.
