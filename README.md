@@ -60,7 +60,6 @@ Success responses use `{"success":true,"data":...}` for search and `{"success":t
 |   `-- services
 |-- migrations
 |-- docs
-|   |-- PLAN.md
 |   |-- docs.go
 |   |-- swagger.json
 |   `-- swagger.yaml
