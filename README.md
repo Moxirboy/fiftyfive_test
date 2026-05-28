@@ -76,13 +76,66 @@ Success responses use `{"success":true,"data":...}` for search and `{"success":t
 `-- README.md
 ```
 
+## API
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/flights/search` | Validate the request, search the provider, price and persist offers, return them. |
+| `POST` | `/api/v1/bookings` | Create a preliminary booking for an offer. Honors an optional `Idempotency-Key` header. |
+| `GET` | `/health` | Liveness check (`{"status":"ok"}`). |
+| `GET` | `/swagger/index.html` | Swagger UI. |
+
+Every failure uses the same envelope — `{"success":false,"error":{"code":"...","message":"..."}}`:
+
+| Code | HTTP | When |
+|---|---:|---|
+| `VALIDATION_ERROR` | 400 | A request field broke a business rule. |
+| `BAD_REQUEST` | 400 | Body could not be parsed as JSON. |
+| `OFFER_NOT_FOUND` | 404 | Booking referenced an unknown offer. |
+| `OFFER_EXPIRED` | 409 | Booking referenced an expired offer. |
+| `PROVIDER_UNAVAILABLE` | 502 | Provider failed (after timeout + retries). |
+| `PROVIDER_EMPTY` | 404 | Provider returned no offers. |
+| `IDEMPOTENCY_CONFLICT` | 409 | Idempotency key reused with a different body. |
+| `INTERNAL_ERROR` | 500 | Unexpected server error. |
+
+## Pricing
+
+All money is computed in integer cents and totaled across every passenger:
+
+```text
+base        = Σ (provider_price_pax × count_pax)        # per passenger type
+commission  = round_half_up(base × commission_percent / 100)
+service_fee = Σ (fee_pax × count_pax)                   # adult 15, child 10, infant 0 USD
+total       = base + commission + service_fee
+profit      = commission + service_fee
+```
+
+Worked example — 1 adult (base 300) + 1 child (base 200) at 5% commission:
+
+```text
+base = 500.00   commission = 25.00   service_fee = 25.00   total = 550.00   profit = 50.00
+```
+
+Rates are configurable via `COMMISSION_PERCENT` and `SERVICE_FEE_*`. The mock provider (`MockAvia`) emits supplier-format prices in cents (`price_adult`, `price_child`, `price_infant`); the service normalizes them into the unified `OfferResponse`.
+
+## Database And Migrations
+
+Schema is managed by golang-migrate, one table per migration so changes stay granular and reversible:
+
+| Migration | Adds |
+|---|---|
+| `000001_create_flight_offers` | `flight_offers` — priced, persisted offers with `expires_at`. |
+| `000002_create_bookings` | `bookings` — `offer_id` FK + index. |
+| `000003_create_booking_passengers` | `booking_passengers` — FK to `bookings` with `ON DELETE CASCADE`. |
+| `000004_add_booking_idempotency` | `idempotency_key` + `request_hash` on `bookings`, with a partial unique index. |
+
 ## Tech Stack And Decisions
 
 - Go 1.25 backend service.
 - Gin for HTTP routing and middleware.
 - GORM for database access.
 - PostgreSQL 16 for persistence.
-- golang-migrate with raw SQL migrations for schema changes.
+- golang-migrate with raw SQL migrations, one table per migration.
 - `log/slog` JSON logging with request ID correlation.
 - swaggo for generated OpenAPI docs served by the app.
 - Manual dependency wiring in `cmd/app/main.go`.
@@ -128,6 +181,15 @@ Swagger UI is available at:
 ```text
 http://localhost:8080/swagger/index.html
 ```
+
+## Testing
+
+```sh
+make test                      # go test ./...
+go test -cover ./internal/...  # with coverage
+```
+
+Unit tests cover the money/pricing math, request validation, MockAvia normalization, the provider retry/timeout decorator, and the flight/booking services — including idempotent replay and conflict. Services are tested with fakes and an injected clock and ID generator, so the suite needs no database.
 
 ## Curl Examples
 

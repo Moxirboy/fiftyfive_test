@@ -6,7 +6,7 @@ Create a new package under `internal/providers` that implements `FlightProvider`
 
 ## 2. Caching Search Results
 
-Use a normalized key such as `from|to|departure_date|return_date|adults|children|infants|currency`. Store results in Redis for a short TTL, for example 1-5 minutes, because fares are volatile. Cache normalized provider offers before final pricing so configured fees still apply at response time. Add singleflight or a lock per key to prevent cache stampedes.
+Slot a cache in front of `FlightService.Search`, keyed on a normalized request such as `from|to|departure_date|return_date|adults|children|infants|currency`. Store results in Redis for a short TTL, for example 1-5 minutes, because fares are volatile. Cache normalized provider offers before final pricing so configured fees still apply at response time. Add singleflight or a per-key lock to prevent cache stampedes.
 
 ## 3. Preventing Duplicate Bookings
 
@@ -14,7 +14,7 @@ This is implemented. `POST /api/v1/bookings` accepts an `Idempotency-Key` header
 
 ## 4. Logs And Monitoring
 
-Keep structured `slog` JSON logs on stdout with `request_id` on each request and downstream service log. Add Prometheus RED metrics: request rate, error count, and duration, plus provider latency and booking counters. Add OpenTelemetry traces across handler, service, provider, and database boundaries. Alert on elevated 5xx rate, provider failures, high latency, and failed booking creation.
+Already in place: structured `slog` JSON logs on stdout with a `request_id` attached to every request (and echoed in the `X-Request-ID` response header) via `internal/logger` and the logging/request-id middleware. Build on that with Prometheus RED metrics (request rate, error count, duration) plus provider-latency and booking counters, and OpenTelemetry traces across the handler, service, provider, and database boundaries. Alert on elevated 5xx rate, provider failures, high latency, and failed booking creation.
 
 ## 5. Future Microservice Splits
 
